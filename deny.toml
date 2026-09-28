@@ -1,0 +1,137 @@
+# ============================================================
+# cargo-deny конфигурация
+# ============================================================
+#
+# Документация: https://embarkstudios.github.io/cargo-deny/
+# Схема для cargo-deny 0.20.x.
+#
+# ## Как работает licenses
+#
+# `allow = [...]` — whitelist. Любая публичная зависимость с
+# лицензией, которой нет в списке, приводит к ошибке.
+#
+# Workspace-крейты с `publish = false` — не проверяются: они не
+# публикуются, значит их лицензия не важна для compliance.
+# См. `[licenses] private`.
+#
+# ## Команда проверки
+#
+# `cargo deny check` (все разделы).
+
+[graph]
+# Проверяем только Linux-таргет (целевой для прода). Windows/Android
+# крейты не попадают в релиз — их лицензии проверять не нужно.
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+
+# ============================================================
+# Advisories (RUSTSEC)
+# ============================================================
+
+[advisories]
+version = 2
+# В Linux-таргет (прод-платформа) RUSTSEC-2023-0071 (rsa via sqlx-mysql)
+# не попадает — sqlx-mysql не компилируется. Проверка `cargo audit`
+# использует полный Cargo.lock и видит rsa; ignore для неё — в
+# `.cargo/audit.toml`.
+ignore = []
+
+# ============================================================
+# Licenses — whitelist
+# ============================================================
+#
+# `private = { ignore = true }` — workspace-крейты с
+# `publish = false` не проверяются.
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+private = { ignore = true }
+
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "0BSD",
+    "BSL-1.0",
+    # webpki-roots (via sqlx-core, hyper-rustls, lettre, reqwest).
+    # Community Data License Agreement Permissive 2.0 — permissive.
+    "CDLA-Permissive-2.0",
+]
+
+# ring использует композитную лицензию — указываем expression явно.
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+# ============================================================
+# Bans
+# ============================================================
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+deny = [
+    { name = "openssl-sys" },
+    { name = "native-tls" },
+    { name = "rustls-native-certs" },
+]
+
+skip = [
+    # --- Транзитивные дубликаты от axum/sqlx/reqwest ---
+
+    # axum 0.7 -> hyper 1.x, axum-prometheus 0.6 -> hyper 0.14.
+    { name = "hyper", version = "=0.14.32" },
+    { name = "http", version = "=0.2.12" },
+    { name = "http-body", version = "=0.4.6" },
+    { name = "tower", version = "=0.4.13" },
+    { name = "tower-http", version = "=0.5.2" },
+    { name = "base64", version = "=0.21.7" },
+    { name = "base64", version = "=0.22.1" },
+
+    # sqlx/postgres-protocol тянут старый sha2-стек.
+    { name = "sha2", version = "=0.10.9" },
+    { name = "md-5", version = "=0.10.6" },
+    { name = "hmac", version = "=0.12.1" },
+    { name = "block-buffer", version = "=0.10.4" },
+    { name = "crypto-common", version = "=0.1.7" },
+    { name = "digest", version = "=0.10.7" },
+
+    # metrics-* в разных минорных.
+    { name = "metrics", version = "=0.22.4" },
+    { name = "metrics-util", version = "=0.16.3" },
+    { name = "metrics-exporter-prometheus", version = "=0.13.1" },
+    { name = "sketches-ddsketch", version = "=0.2.2" },
+
+    # thiserror 1.0 из sqlx-macros-core.
+    { name = "thiserror", version = "=1.0.69" },
+
+    # rand 0.8 / 0.9 / 0.10 от разных экосистем.
+    { name = "rand", version = "=0.8.8" },
+    { name = "rand", version = "=0.9.5" },
+    { name = "getrandom", version = "=0.2.17" },
+    { name = "getrandom", version = "=0.3.4" },
+    { name = "rand_core", version = "=0.6.4" },
+    { name = "rand_core", version = "=0.9.5" },
+    { name = "rand_chacha", version = "=0.3.1" },
+]
+
+# ============================================================
+# Sources
+# ============================================================
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

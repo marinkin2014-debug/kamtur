@@ -2,6 +2,7 @@
 name = "infrastructure"
 edition.workspace = true
 version.workspace = true
+publish.workspace = true
 
 [dependencies]
 domain = { path = "../domain" }

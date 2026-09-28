@@ -1,23 +1,13 @@
 # ============================================================
-# Kamtur CI — fmt, clippy, test, audit
+# Kamtur CI — fmt, clippy, test, audit, deny
 # ============================================================
 #
 # Jobs:
 #
 #   1. `check`  — fmt + clippy. Matrix: [stable, beta].
 #   2. `test`   — сборка + все тесты с Postgres. Matrix: [stable, beta].
-#   3. `audit`  — RustSec-проверка зависимостей. Одиночный (нет matrix).
-#
-# ## Matrix по Rust
-#
-# `stable` — обязательный, блокирует merge.
-# `beta`   — `continue-on-error: true`, информационный.
-#
-# Beta — это будущий stable через 6 недель. Ловим breaking changes
-# и новые clippy lints заранее, пока они не доехали до прода.
-# Пример: clippy::result_large_err был в beta за 6 недель до 1.98.
-#
-# `fail-fast: false` — падение stable не отменяет beta, и наоборот.
+#   3. `audit`  — RustSec-проверка (компактный отчёт).
+#   4. `deny`   — политика зависимостей: лицензии, banned, sources.
 
 name: CI
 
@@ -45,10 +35,8 @@ jobs:
   check:
     name: fmt + clippy (${{ matrix.rust }})
     runs-on: ubuntu-latest
-    # Beta падает — не блокирует. Stable падает — блокирует merge.
     continue-on-error: ${{ matrix.rust == 'beta' }}
     strategy:
-      # Если stable упал, beta продолжает — нам важно её увидеть.
       fail-fast: false
       matrix:
         rust: [stable, beta]
@@ -65,8 +53,6 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          # Раздельный кэш: stable и beta компилируют разными версиями
-          # компилятора, артефакты несовместимы.
           shared-key: ci-check-${{ matrix.rust }}
 
       - name: cargo fmt --check
@@ -119,7 +105,7 @@ jobs:
         run: cargo test --workspace
 
   # ============================================================
-  # 3. audit — уязвимости в зависимостях
+  # 3. audit — RustSec-уязвимости
   # ============================================================
   audit:
     name: audit
@@ -141,3 +127,23 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+
+  # ============================================================
+  # 4. deny — политика зависимостей
+  # ============================================================
+  #
+  # Используем официальный action: он кэширует бинарь cargo-deny,
+  # устанавливает toolchain и запускает check за ~30 секунд.
+  # `cargo install cargo-deny` занял бы 2-3 минуты.
+  deny:
+    name: deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cargo-deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check all
+          arguments: --all-features
+          manifest-path: ./Cargo.toml
