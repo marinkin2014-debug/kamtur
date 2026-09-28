@@ -2,13 +2,22 @@
 # Kamtur CI — fmt, clippy, test, audit
 # ============================================================
 #
-# Три параллельных job'а:
+# Jobs:
 #
-#   1. `check`  — fmt + clippy. Быстрый (~30 сек после кэша).
-#   2. `test`   — сборка + все тесты с реальным Postgres. ~3-5 мин.
-#   3. `audit`  — RustSec-проверка зависимостей. ~1 мин.
+#   1. `check`  — fmt + clippy. Matrix: [stable, beta].
+#   2. `test`   — сборка + все тесты с Postgres. Matrix: [stable, beta].
+#   3. `audit`  — RustSec-проверка зависимостей. Одиночный (нет matrix).
 #
-# Concurrency-группа отменяет предыдущий прогон для той же ветки/PR.
+# ## Matrix по Rust
+#
+# `stable` — обязательный, блокирует merge.
+# `beta`   — `continue-on-error: true`, информационный.
+#
+# Beta — это будущий stable через 6 недель. Ловим breaking changes
+# и новые clippy lints заранее, пока они не доехали до прода.
+# Пример: clippy::result_large_err был в beta за 6 недель до 1.98.
+#
+# `fail-fast: false` — падение stable не отменяет beta, и наоборот.
 
 name: CI
 
@@ -30,21 +39,35 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # ============================================================
+  # 1. fmt + clippy — matrix stable + beta
+  # ============================================================
   check:
-    name: fmt + clippy
+    name: fmt + clippy (${{ matrix.rust }})
     runs-on: ubuntu-latest
+    # Beta падает — не блокирует. Stable падает — блокирует merge.
+    continue-on-error: ${{ matrix.rust == 'beta' }}
+    strategy:
+      # Если stable упал, beta продолжает — нам важно её увидеть.
+      fail-fast: false
+      matrix:
+        rust: [stable, beta]
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-check
+          # Раздельный кэш: stable и beta компилируют разными версиями
+          # компилятора, артефакты несовместимы.
+          shared-key: ci-check-${{ matrix.rust }}
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
@@ -52,9 +75,17 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # ============================================================
+  # 2. test — matrix stable + beta, с Postgres
+  # ============================================================
   test:
-    name: test
+    name: test (${{ matrix.rust }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.rust == 'beta' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, beta]
 
     services:
       postgres:
@@ -74,17 +105,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-test
+          shared-key: ci-test-${{ matrix.rust }}
 
       - name: cargo test --workspace
         run: cargo test --workspace
 
+  # ============================================================
+  # 3. audit — уязвимости в зависимостях
+  # ============================================================
   audit:
     name: audit
     runs-on: ubuntu-latest
