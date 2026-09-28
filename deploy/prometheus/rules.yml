@@ -99,8 +99,8 @@ groups:
     rules:
       - alert: ApiHighErrorRate
         expr: |
-          sum(rate(axum_http_requests_total{status=~"5.."}[5m])) 
-          / 
+          sum(rate(axum_http_requests_total{status=~"5.."}[5m]))
+          /
           sum(rate(axum_http_requests_total[5m])) > 0.01
         for: 10m
         labels:

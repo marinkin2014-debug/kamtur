@@ -322,9 +322,9 @@ let mut health_checks: Vec<Arc<dyn HealthCheck>> = vec![
 добавить в БД:
 
 ```sql
-INSERT INTO enrichment_rules 
+INSERT INTO enrichment_rules
     (cruise_provider_id, field_name, rule_type, rule_config, priority, is_active)
-VALUES 
+VALUES
     ('2', 'site_name', 'constant', '{"value": "Водоход"}', 100, true),
     ('2', 'route', 'template', '{"template": "{name} (Водоход)"}', 100, true);
 ```
@@ -354,7 +354,7 @@ const DEFAULT_PROVIDER_ID: &str = "1";
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     const FIXTURE: &[u8] = br#"<?xml version="1.0"?>...<your xml>..."#;
 
     #[test]

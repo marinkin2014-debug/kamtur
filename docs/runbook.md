@@ -31,9 +31,9 @@ Exit code 0 — успех, 1 — были ошибки. Логи в stdout.
 ### Проверка state digest
 
 ```sql
-SELECT notification_state, count(*) 
-FROM errors 
-WHERE resolved = false 
+SELECT notification_state, count(*)
+FROM errors
+WHERE resolved = false
 GROUP BY 1;
 ```
 
@@ -43,9 +43,9 @@ GROUP BY 1;
 ### Проверка orphan sync_runs
 
 ```sql
-SELECT id, started_at, status 
-FROM sync_runs 
-WHERE status = 'running' 
+SELECT id, started_at, status
+FROM sync_runs
+WHERE status = 'running'
   AND started_at < now() - interval '2 hours';
 ```
 
@@ -65,10 +65,10 @@ worker sync --provider=1   # проверит и запишет новый run
 
 **Проверить:**
 ```sql
-SELECT id, started_at, finished_at, status, error_message 
-FROM sync_runs 
-WHERE cruise_provider_id = '1' 
-ORDER BY started_at DESC 
+SELECT id, started_at, finished_at, status, error_message
+FROM sync_runs
+WHERE cruise_provider_id = '1'
+ORDER BY started_at DESC
 LIMIT 5;
 ```
 
@@ -104,11 +104,11 @@ tail -f logs/worker.log.$(date +%F)
 
 **Проверить:**
 ```sql
-SELECT id, started_at, status 
-FROM sync_runs 
-WHERE cruise_provider_id = '1' 
-  AND status = 'success' 
-ORDER BY started_at DESC 
+SELECT id, started_at, status
+FROM sync_runs
+WHERE cruise_provider_id = '1'
+  AND status = 'success'
+ORDER BY started_at DESC
 LIMIT 5;
 ```
 
@@ -148,9 +148,9 @@ curl -i "$VOLGA_URL" --max-time 30
 
 **Проверить:**
 ```sql
-SELECT count(*), state 
-FROM pg_stat_activity 
-WHERE datname = 'kamtur24' 
+SELECT count(*), state
+FROM pg_stat_activity
+WHERE datname = 'kamtur24'
 GROUP BY state;
 ```
 
@@ -198,18 +198,18 @@ psql "$DATABASE_URL" -c "SELECT sha256, fetched_at FROM raw_snapshots WHERE crui
 
 ```sql
 SELECT id, stage, severity, message, notification_attempts, notified_at
-FROM errors 
-WHERE notification_state = 'dead' 
-ORDER BY occurred_at DESC 
+FROM errors
+WHERE notification_state = 'dead'
+ORDER BY occurred_at DESC
 LIMIT 20;
 ```
 
 Причина обычно: SMTP лежал > 5 циклов (25 минут). Найти время:
 
 ```sql
-SELECT min(occurred_at), max(occurred_at), count(*) 
-FROM errors 
-WHERE notification_state = 'dead' 
+SELECT min(occurred_at), max(occurred_at), count(*)
+FROM errors
+WHERE notification_state = 'dead'
   AND occurred_at > now() - interval '1 day';
 ```
 
@@ -233,11 +233,11 @@ Worker упал с активной транзакцией. Advisory lock `pg_ad
 
 Принудительно:
 ```sql
-UPDATE sync_runs 
-SET status = 'failed', 
-    finished_at = now(), 
+UPDATE sync_runs
+SET status = 'failed',
+    finished_at = now(),
     error_message = 'orphan: manual cleanup'
-WHERE status = 'running' 
+WHERE status = 'running'
   AND started_at < now() - interval '1 hour';
 ```
 
@@ -324,9 +324,9 @@ Worker сам восстановит соединения (retry с exponential 
 ### Обновление правил обогащения
 
 ```sql
-INSERT INTO enrichment_rules 
+INSERT INTO enrichment_rules
     (cruise_provider_id, field_name, rule_type, rule_config, priority, is_active)
-VALUES 
+VALUES
     ('1', 'site_name', 'constant', '{"value": "Volga Wolga"}', 100, true);
 ```
 
@@ -349,10 +349,10 @@ let schedules = vec![ProviderSchedule {
 ### Просмотр активных advisory locks
 
 ```sql
-SELECT objid::bigint AS key, 
-       (objid::bigint >> 32) AS dbid, 
-       mode, granted 
-FROM pg_locks 
+SELECT objid::bigint AS key,
+       (objid::bigint >> 32) AS dbid,
+       mode, granted
+FROM pg_locks
 WHERE locktype = 'advisory';
 ```
 
