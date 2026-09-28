@@ -5,9 +5,40 @@
 # Jobs:
 #
 #   1. `check`  — fmt + clippy. Matrix: [stable, beta].
-#   2. `test`   — сборка + все тесты с Postgres. Matrix: [stable, beta].
-#   3. `audit`  — RustSec-проверка (компактный отчёт).
-#   4. `deny`   — политика зависимостей: лицензии, banned, sources.
+#   2. `test`   — unit + integration tests с Postgres. Matrix: [stable, beta].
+#   3. `audit`  — RustSec-сканирование (известные уязвимости).
+#   4. `deny`   — проверка зависимостей: лицензии, banned, sources.
+#
+# CACHE STRATEGY
+#
+#   `Swatinem/rust-cache@v2` на каждом job'е с уникальным `shared-key`.
+#
+#   - check и test имеют разные `shared-key`: разные наборы target-ов
+#     (`--all-targets` включает benches/examples, `--workspace` нет).
+#     Общий ключ приводил бы к инвалидации между job'ами.
+#
+#   - `cache-on-failure: true` для check и test: если clippy/тесты упали
+#     после компиляции, кэш сохраняется. Итерация «упало → фикс → push»
+#     компилирует только изменившееся.
+#
+#   - `save-if: matrix.rust == 'stable'` для check и test: beta-тулчейн
+#     обновляется каждые 6 недель, его кэш практически не переиспользуется.
+#     Отказ от записи beta-кэшей экономит ~40% storage (лимит GitHub
+#     Actions cache — 10 GB на репозиторий). Beta продолжает собираться,
+#     просто без кэша — она не блокирует мердж.
+#
+#   - `audit` использует `cache-targets: false`: job не собирает крейты,
+#     только запускает `cargo-audit`. Кэшируется лишь registry.
+#
+#   Реальное время прогона: ~1m 10s (stable). Кэш работает: холодная
+#   сборка workspace + 120 зависимостей занимает 3-5 минут.
+#
+# NODE.JS DEPRECATION
+#
+#   `actions/checkout@v4` и др. сейчас показывают warning про Node.js 20.
+#   GitHub форсит их на Node.js 24 — это не блокер. Апгрейд до @v5
+#   запланирован отдельно (см. docs/runbook.md).
+# ============================================================
 
 name: CI
 
@@ -17,15 +48,21 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel-in-progress: старый прогон на той же ветке отменяется, когда
+# приходит новый push. Экономит минуты на быстрых итерациях.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  # Postgres service живёт на localhost:5432 внутри runner'а.
   TEST_DATABASE_URL: postgres://test:test@localhost:5432/kamtur_test
   DATABASE_URL: postgres://test:test@localhost:5432/kamtur_test
   RUST_BACKTRACE: "1"
   CARGO_TERM_COLOR: always
+  # Инкрементальная компиляция замедляет кэш: каждый .rlib содержит
+  # уникальные metadata, из-за чего кэш `target/` «промахивается».
+  # Для CI всегда 0.
   CARGO_INCREMENTAL: "0"
 
 jobs:
@@ -54,6 +91,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-check-${{ matrix.rust }}
+          # Сохранять кэш даже если последующий шаг упал. Иначе clippy
+          # с ошибкой не оставит кэш, и следующая итерация перекомпилирует
+          # всё с нуля.
+          cache-on-failure: true
+          # Только stable пишет кэш. Beta обновляется каждые 6 недель,
+          # её кэш практически не переиспользуется. Экономия storage.
+          save-if: ${{ matrix.rust == 'stable' }}
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
@@ -100,13 +144,22 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-test-${{ matrix.rust }}
+          # Критично для test: если integration-тест упал после компиляции
+          # workspace (что занимает 40-60 сек), кэш сохраняется. Иначе
+          # следующая итерация компилирует всё заново.
+          cache-on-failure: true
+          # См. комментарий в check. Beta не пишет кэш.
+          save-if: ${{ matrix.rust == 'stable' }}
 
       - name: cargo test --workspace
         run: cargo test --workspace
 
   # ============================================================
-  # 3. audit — RustSec-уязвимости
+  # 3. audit — RustSec-сканирование
   # ============================================================
+  #
+  # Отдельный job, а не шаг в check: разные зависимости (нужен
+  # cargo-audit), падение не должно блокировать основную сборку.
   audit:
     name: audit
     runs-on: ubuntu-latest
@@ -120,6 +173,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-audit
+          # audit не собирает крейты, только запускает cargo-audit.
+          # Кэш target/ был бы бесполезен.
           cache-targets: false
 
       - name: Install cargo-audit
@@ -129,10 +184,10 @@ jobs:
         run: cargo audit
 
   # ============================================================
-  # 4. deny — политика зависимостей
+  # 4. deny — проверка зависимостей
   # ============================================================
   #
-  # Используем официальный action: он кэширует бинарь cargo-deny,
+  # Используем официальный action: он ставит cargo-deny,
   # устанавливает toolchain и запускает check за ~30 секунд.
   # `cargo install cargo-deny` занял бы 2-3 минуты.
   deny:
