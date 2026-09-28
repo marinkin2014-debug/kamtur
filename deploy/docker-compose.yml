@@ -1,0 +1,90 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: kamtur-prometheus
+    restart: unless-stopped
+    user: "65534:65534"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      # Разворачивает ${VAR} в конфиге из env контейнера.
+      - "--config.expand-env"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      # Нужен для POST /-/reload (перечитать конфиг после правок).
+      - "--web.enable-lifecycle"
+      # Admin API (delete series, snapshot, clean tombstones) ОТКЛЮЧЁН.
+      # Не нужен для эксплуатации, опасен при компрометации.
+    ports:
+      # Только loopback. Доступ извне — через SSH-туннель или nginx.
+      - "127.0.0.1:9091:9090"
+    env_file:
+      - ./.env
+    networks:
+      - kamtur
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: kamtur-grafana
+    restart: unless-stopped
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # Пароль из env — не хардкод. См. deploy/.env.example.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in deploy/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - kamtur
+    depends_on:
+      - prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: kamtur-alertmanager
+    restart: unless-stopped
+    user: "65534:65534"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      # Разворачивает ${SMTP_PASSWORD} и др. из env.
+      - "--config.expand-env"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "127.0.0.1:9093:9093"
+    env_file:
+      - ./.env
+    networks:
+      - kamtur
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:
+
+networks:
+  kamtur:
+    driver: bridge

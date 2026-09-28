@@ -1,0 +1,124 @@
+groups:
+  - name: kamtur_critical
+    interval: 30s
+    rules:
+      - alert: WorkerDown
+        expr: up{job="worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Kamtur worker недоступен"
+          description: "Prometheus не может собрать метрики с worker более 2 минут."
+
+      - alert: SyncNoSuccessForTwoHours
+        expr: |
+          (time() - kamtur_sync_last_success_timestamp_seconds) > 7200
+        for: 5m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Sync не проходил больше 2 часов (provider {{ $labels.provider }})"
+          description: "Последний успешный sync: {{ $value | humanizeDuration }} назад."
+
+      - alert: SyncErrorsHigh
+        expr: |
+          sum(rate(kamtur_sync_errors_total[10m])) by (provider, stage) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Высокий уровень ошибок sync ({{ $labels.provider }}/{{ $labels.stage }})"
+          description: "Ошибки: {{ $value | humanize }}/сек за 10 минут."
+
+  - name: kamtur_warnings
+    interval: 60s
+    rules:
+      - alert: SyncPersistSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(kamtur_sync_phase_duration_seconds_bucket{phase="persist"}[15m])) by (le)
+          ) > 10
+        for: 15m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Persist фаза длится > 10 сек (p95)"
+          description: "p95 persist: {{ $value }} сек."
+
+      - alert: SyncFetchSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(kamtur_sync_phase_duration_seconds_bucket{phase="fetch"}[15m])) by (le)
+          ) > 300
+        for: 15m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Fetch фаза длится > 5 мин (p95)"
+          description: "p95 fetch: {{ $value }} сек. Возможна проблема у провайдера."
+
+      - alert: RawSnapshotsSizeGrowing
+        expr: kamtur_raw_snapshots_size_bytes > 50 * 1024 * 1024 * 1024
+        for: 1h
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "raw_snapshots превысил 50 ГБ"
+          description: "Размер: {{ $value | humanize1024 }}."
+
+      - alert: DBPoolSaturated
+        expr: |
+          (kamtur_db_pool_available / kamtur_db_pool_size) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "DB pool исчерпан (свободно {{ $value | humanizePercentage }})"
+          description: "Мало свободных соединений в пуле более 10 минут."
+
+      - alert: CircuitBreakerOpen
+        expr: kamtur_circuit_breaker_state > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Circuit breaker не в Closed у {{ $labels.provider }}"
+          description: "Value: {{ $value }} (1=open, 2=half_open)."
+
+  - name: kamtur_api
+    interval: 30s
+    rules:
+      - alert: ApiHighErrorRate
+        expr: |
+          sum(rate(axum_http_requests_total{status=~"5.."}[5m])) 
+          / 
+          sum(rate(axum_http_requests_total[5m])) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Высокий процент 5xx в API ({{ $value | humanizePercentage }})"
+          description: "Доля 5xx: {{ $value | humanizePercentage }}."
+
+      - alert: ApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(axum_http_requests_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "API p95 latency > 2 сек"
+          description: "p95: {{ $value }} сек."

@@ -1,0 +1,17 @@
+[package]
+name = "application"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+domain = { path = "../domain" }
+
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+pretty_assertions.workspace = true

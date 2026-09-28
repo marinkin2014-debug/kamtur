@@ -1,0 +1,28 @@
+[package]
+name = "infrastructure"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+domain = { path = "../domain" }
+
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+lettre.workspace = true
+metrics.workspace = true
+quick-xml.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+dotenvy.workspace = true
+pretty_assertions.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+uuid.workspace = true

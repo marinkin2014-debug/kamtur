@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: kamtur
+    env: prod
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "/etc/prometheus/rules.yml"
+
+# Targets подставляются из env (`--config.expand-env`).
+# Значения — в deploy/.env: WORKER_TARGET и API_TARGET.
+# Формат: "host:port". Для локальной отладки через docker-compose
+# используй host.docker.internal, для прод-VM — внутренние IP.
+scrape_configs:
+  - job_name: worker
+    static_configs:
+      - targets: ["${WORKER_TARGET}"]
+        labels:
+          service: worker
+          component: sync
+
+  - job_name: api
+    static_configs:
+      - targets: ["${API_TARGET}"]
+        labels:
+          service: api
+          component: http
+    metrics_path: /metrics
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

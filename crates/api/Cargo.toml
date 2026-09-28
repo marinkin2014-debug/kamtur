@@ -1,0 +1,43 @@
+[package]
+name = "api"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+name = "api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
+[dependencies]
+application = { path = "../application" }
+domain = { path = "../domain" }
+infrastructure = { path = "../infrastructure" }
+
+anyhow.workspace = true
+async-trait.workspace = true
+axum = { workspace = true, features = ["macros"] }
+axum-prometheus.workspace = true
+chrono.workspace = true
+dotenvy.workspace = true
+http-body.workspace = true
+ipnet.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+pretty_assertions.workspace = true
+rust_decimal.workspace = true
+tower = { workspace = true, features = ["util"] }

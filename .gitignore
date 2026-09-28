@@ -1,0 +1,34 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+/logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local docker overrides
+docker-compose.override.yml
+# Local artifacts
+*_files.txt
+*_crates.txt
+etag-headers.txt
+
+# Local deploy dump
+deploy_dump.txt
+
+.env

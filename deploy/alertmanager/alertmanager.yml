@@ -1,0 +1,62 @@
+# ============================================================
+# Alertmanager config
+# ============================================================
+#
+# Секреты подставляются через `--config.expand-env` (см. command в
+# docker-compose.yml). Alertmanager разворачивает `${VAR}` в этом файле
+# из env контейнера, который приходит из `deploy/.env`.
+#
+# Если пароль содержит `$`, `{` или `}` — экранируй через `$$`, иначе
+# expand-env сломает подстановку. Yandex app passwords — alphanumeric,
+# обычно не требуют экранирования.
+#
+# Проверка синтаксиса:
+#   docker compose exec alertmanager amtool check-config \
+#       /etc/alertmanager/alertmanager.yml
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "${SMTP_HOST}"
+  smtp_from: "${SMTP_FROM}"
+  smtp_auth_username: "${SMTP_USERNAME}"
+  smtp_auth_password: "${SMTP_PASSWORD}"
+  # Yandex на 465 использует implicit TLS. Alertmanager не умеет
+  # implicit TLS для SMTP — работает только STARTTLS. Для 465 нужно
+  # использовать smtp_smarthost на 587 с STARTTLS, либо (как у нас)
+  # `smtp_require_tls: false` и соединение остаётся plaintext внутри
+  # доверенной сети. Прод-решение: перейти на 587 STARTTLS.
+  smtp_require_tls: false
+
+templates: []
+
+route:
+  receiver: email-admin
+  group_by: [alertname, provider, stage]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - match:
+        severity: critical
+      receiver: email-admin
+      repeat_interval: 1h
+      group_wait: 10s
+    - match:
+        severity: warning
+      receiver: email-admin
+      repeat_interval: 12h
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname, provider]
+
+receivers:
+  - name: email-admin
+    email_configs:
+      - to: "${SMTP_TO}"
+        send_resolved: true
+        headers:
+          Subject: "[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .Alerts | len }})"

@@ -1,0 +1,236 @@
+{
+  "title": "Kamtur Overview",
+  "uid": "kamtur-overview",
+  "tags": ["kamtur", "worker"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 3,
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Sync duration by phase (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(kamtur_sync_phase_duration_seconds_bucket[10m])) by (le, phase))",
+          "legendFormat": "{{ phase }}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Rows written (per second)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(kamtur_rows_written_total[5m])) by (table)",
+          "legendFormat": "{{ table }}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Last success (age, sec)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 8, "w": 4, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3600 },
+              { "color": "red", "value": 7200 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(time() - kamtur_sync_last_success_timestamp_seconds)",
+          "legendFormat": "age"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Sync cycles total",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 8, "w": 4, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(kamtur_sync_cycles_total{status=\"success\"})",
+          "legendFormat": "success"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(kamtur_sync_cycles_total{status=\"failed\"})",
+          "legendFormat": "failed"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(kamtur_sync_cycles_total{status=\"skipped\"})",
+          "legendFormat": "skipped"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Fetch bytes (total)",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 8, "w": 4, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(kamtur_fetch_bytes_total)",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Errors (per sec)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(kamtur_sync_errors_total[5m])) by (stage) or vector(0)",
+          "legendFormat": "{{ stage }}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Raw snapshots size",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(kamtur_raw_snapshots_size_bytes)",
+          "legendFormat": "size"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Raw snapshots count",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 14, "w": 6, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(kamtur_raw_snapshots_count)",
+          "legendFormat": "count"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "DB pool available / size",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 14, "w": 6, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(kamtur_db_pool_available)",
+          "legendFormat": "available"
+        },
+        {
+          "refId": "B",
+          "expr": "max(kamtur_db_pool_size)",
+          "legendFormat": "size"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Process memory (RSS)",
+      "type": "timeseries",
+      "gridPos": { "x": 18, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(process_resident_memory_bytes{job=\"worker\"})",
+          "legendFormat": "worker RSS"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Sync phase duration (avg, last 1h)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kamtur_sync_phase_duration_seconds_sum[1h])) by (phase) / sum(increase(kamtur_sync_phase_duration_seconds_count[1h])) by (phase)",
+          "legendFormat": "avg {{ phase }}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Deactivated entities (total)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(kamtur_deactivated_total)",
+          "legendFormat": "{{ provider }}"
+        }
+      ]
+    }
+  ]
+}

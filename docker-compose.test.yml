@@ -1,0 +1,46 @@
+# Локальный Postgres для integration-тестов.
+#
+# Данные в RAM (tmpfs). При рестарте контейнера БД пустая — нужно
+# перезапустить migrate_test. Это даёт 10-50x ускорение.
+#
+# Запуск:       docker compose -f docker-compose.test.yml up -d
+# Остановка:    docker compose -f docker-compose.test.yml down
+# Сброс данных: docker compose -f docker-compose.test.yml down   (tmpfs очистится сам)
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: kamtur-postgres-test
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: kamtur_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    # tmpfs монтируется поверх /var/lib/postgresql/data.
+    # Postgres entrypoint сам сделает chown и initdb внутри.
+    # НЕ передавай mode=0700 и НЕ переопределяй PGDATA — image
+    # ожидает стандартный путь и права 0755 от root.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d kamtur_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    command:
+      - "postgres"
+      - "-c"
+      - "fsync=off"
+      - "-c"
+      - "synchronous_commit=off"
+      - "-c"
+      - "full_page_writes=off"
+      - "-c"
+      - "wal_level=minimal"
+      - "-c"
+      - "max_wal_senders=0"
+      - "-c"
+      - "checkpoint_timeout=1h"
+      - "-c"
+      - "log_statement=none"
