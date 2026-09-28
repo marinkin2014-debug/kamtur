@@ -1,0 +1,218 @@
+# ============================================================
+# Release workflow
+# ============================================================
+#
+# Trigger: push tag matching v*.*.* (e.g. v0.1.0, v0.2.0-rc1).
+#
+# Produces:
+#   - worker-linux-amd64   static binary (x86_64-unknown-linux-musl)
+#   - api-linux-amd64      static binary (x86_64-unknown-linux-musl)
+#   - SHA256SUMS           sha256 of both binaries
+#
+# Published as a GitHub Release on the tag. Pre-release detection:
+# any tag containing `-` (semver pre-release, e.g. v0.1.0-rc1) is
+# marked as prerelease.
+#
+# HOW TO CUT A RELEASE
+#
+#   1. Bump version in workspace Cargo.toml [workspace.package]:
+#         version = "0.2.0"
+#   2. Commit:
+#         git commit -am "chore: release v0.2.0"
+#   3. Tag and push:
+#         git tag v0.2.0
+#         git push origin main --tags
+#   4. Watch this workflow. When green, a Release appears at
+#      https://github.com/marinkin2014-debug/kamtur/releases
+#
+# VERIFYING DOWNLOADED BINARIES
+#
+#   sha256sum -c SHA256SUMS
+#   file worker-linux-amd64      # → ELF 64-bit LSB executable, x86-64, statically linked
+#
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      # GitHub Actions glob, not regex. `*` matches anything except `/`.
+      - 'v*.*.*'
+
+# GITHUB_TOKEN needs write access to create a Release and upload assets.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================
+  # 1. Verify tag matches workspace version
+  # ============================================================
+  #
+  # Prevents the classic mistake: tagging v0.2.0 while Cargo.toml
+  # still says 0.1.0. Failing here is much cheaper than shipping
+  # a mislabelled binary.
+  verify-version:
+    name: Verify tag matches Cargo.toml version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read workspace version
+        id: ws
+        run: |
+          set -euo pipefail
+          # [workspace.package].version is the first top-level `version =`
+          # line in Cargo.toml. Inline dependency versions are indented
+          # / embedded in tables, so `^version` matches only ours.
+          VERSION=$(grep -m1 '^version' Cargo.toml \
+                    | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from Cargo.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Workspace version: $VERSION"
+
+      - name: Compare with tag
+        env:
+          TAG: ${{ github.ref_name }}
+          WS_VERSION: ${{ steps.ws.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Strip the leading `v` from the tag (v0.2.0 → 0.2.0).
+          TAG_VERSION="${TAG#v}"
+          if [ "$TAG_VERSION" != "$WS_VERSION" ]; then
+            echo "::error::Tag $TAG does not match workspace version $WS_VERSION"
+            echo "::error::Bump version in Cargo.toml or retag."
+            exit 1
+          fi
+          echo "Tag $TAG matches workspace version $WS_VERSION"
+
+  # ============================================================
+  # 2. Build static Linux binaries
+  # ============================================================
+  #
+  # Toolchain rationale:
+  #
+  # - Target: x86_64-unknown-linux-musl. No glibc, no runtime deps.
+  # - `musl-tools` provides `musl-gcc`, needed only for `zstd-sys`
+  #   (vendored C source). Everything else is pure Rust.
+  # - TLS: rustls everywhere (sqlx, reqwest, lettre) — no OpenSSL
+  #   linking, no per-distro libssl version drift.
+  #
+  # Two separate `cargo build` invocations with different `-p`
+  # selectors: cargo's binary-size profile (`strip = "debuginfo"`,
+  # `lto = "thin"`, `codegen-units = 1`) is already in the workspace
+  # root, so no per-invocation profile override is needed.
+  build-linux-musl:
+    name: Build linux-musl binaries
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Separate cache namespace from CI — release builds must not
+          # evict the more frequently used ci.yml cache entries.
+          key: release-musl
+          # Save the cache even if a later step fails: partial builds
+          # are still useful for the next attempt.
+          cache-on-failure: true
+
+      - name: Build worker
+        env:
+          # cc-rs (used by zstd-sys) picks up this variable.
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          # Rust's linker invocation uses this variable.
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl -p worker
+
+      - name: Build api
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl -p api
+
+      - name: Prepare artifacts
+        run: |
+          set -euo pipefail
+          TARGET_DIR=target/x86_64-unknown-linux-musl/release
+          mkdir -p dist
+
+          cp "$TARGET_DIR/worker" dist/worker-linux-amd64
+          cp "$TARGET_DIR/api"    dist/api-linux-amd64
+
+          # Second pass strip: cargo already strips debuginfo via
+          # [profile.release] in the workspace root, but running the
+          # host `strip` (binutils) shaves any remaining symbol table.
+          # `|| true` because a fully-stripped binary returns non-zero
+          # when nothing is left to strip.
+          strip dist/worker-linux-amd64 || true
+          strip dist/api-linux-amd64    || true
+
+          cd dist
+          sha256sum worker-linux-amd64 api-linux-amd64 > SHA256SUMS
+
+          echo "--- artifacts ---"
+          ls -lh
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+          echo "--- file(1) sanity ---"
+          file worker-linux-amd64 api-linux-amd64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kamtur-linux-musl
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  # ============================================================
+  # 3. Publish GitHub Release
+  # ============================================================
+  #
+  # Pre-release heuristic: any tag containing `-` is a semver
+  # pre-release (v0.2.0-rc1, v0.2.0-beta.3). Tags without `-`
+  # are stable releases.
+  release:
+    name: Create GitHub Release
+    needs: build-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kamtur-linux-musl
+          path: dist
+
+      - name: List artifacts
+        run: ls -lh dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          # Auto-generated notes from commits since the previous tag.
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
