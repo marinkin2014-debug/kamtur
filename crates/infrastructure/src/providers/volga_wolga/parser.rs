@@ -1,5 +1,6 @@
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use tracing::warn;
@@ -280,7 +281,11 @@ fn attr(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes()
         .flatten()
         .find(|a| a.key.as_ref() == key)
-        .and_then(|a| String::from_utf8(a.value.into_owned()).ok())
+        .and_then(|a| {
+            a.normalized_value(XmlVersion::Explicit1_0)
+                .ok()
+                .map(|v| v.into_owned())
+        })
 }
 
 #[inline]

@@ -11,12 +11,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::extract::connect_info::MockConnectInfo;
-use axum::http::{header, Request, StatusCode};
+use axum::http::{header, HeaderValue, Request, StatusCode};
 use axum::middleware;
+use axum::response::IntoResponse;
 use axum::Router;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use tower::ServiceExt; // для `.oneshot()`
+use tower::ServiceExt;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 
 use application::use_cases::get_cruise::GetCruiseUseCase;
@@ -27,7 +28,7 @@ use domain::views::*;
 
 use api::middleware::auth::require_token;
 use api::middleware::cache::cache_headers;
-use api::middleware::rate_limit::{rate_limit_mw, RateLimiter, TrustedProxies};
+use api::middleware::rate_limit::{rate_limit_mw, RateLimiter, TooManyRequests, TrustedProxies};
 use api::middleware::timeout::{timeout_mw, TimeoutState};
 use api::routes;
 use api::state::{AppState, DbHealth};
@@ -705,4 +706,14 @@ async fn list_uses_default_provider_id_from_state() {
 
     let body = body_json(resp).await;
     assert_eq!(body["items"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn too_many_requests_has_status_and_retry_after() {
+    let resp = TooManyRequests.into_response();
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        resp.headers().get(header::RETRY_AFTER).unwrap(),
+        HeaderValue::from_static("1"),
+    );
 }

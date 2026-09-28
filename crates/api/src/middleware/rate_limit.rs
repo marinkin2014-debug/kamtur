@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{header, HeaderValue, Request};
+use axum::http::{header, HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use ipnet::IpNet;
@@ -112,7 +112,6 @@ impl RateLimiter {
         let shard = self.shard_for(ip);
         let mut map = shard.map.lock().unwrap_or_else(|e| e.into_inner());
 
-        // Ленивая очистка: если шард разросся, выкидываем протухшие записи.
         if map.len() > MAX_ENTRIES_PER_SHARD {
             map.retain(|_, b| now.duration_since(b.last_seen) < BUCKET_TTL);
         }
@@ -161,34 +160,49 @@ impl RateLimiter {
 }
 
 // ============================================================
+// TooManyRequests
+// ============================================================
+
+/// Сигнал «слишком много запросов».
+///
+/// Отдельный unit-тип вместо `axum::http::Response<Body>` (128 байт),
+/// чтобы `Err`-вариант `Result` не раздувал горячий путь middleware.
+/// `Result<Response, Response>` заставляет компилятор резервировать
+/// 128 байт под `Ok` и ещё 128 под `Err` на каждом вызове — Clippy
+/// `result_large_err` справедливо ругается (Rust 1.98+).
+///
+/// Реализует `IntoResponse`, axum сам вызовет его для Err-варианта.
+#[derive(Debug, Clone, Copy)]
+pub struct TooManyRequests;
+
+impl IntoResponse for TooManyRequests {
+    fn into_response(self) -> Response {
+        let mut resp = StatusCode::TOO_MANY_REQUESTS.into_response();
+        resp.headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        resp
+    }
+}
+
+// ============================================================
 // Middleware
 // ============================================================
 
-/// Возвращаем `Result<Response, Response>`, а не `Result<Response, StatusCode>`,
-/// потому что на 429 нужен кастомный `Retry-After`. `Response` реализует
-/// `IntoResponse`, axum принимает оба типа.
+/// Возвращаем `Result<Response, TooManyRequests>`, а не `Result<Response, Response>`,
+/// потому что на 429 нужен кастомный `Retry-After` и маленький Err-вариант.
 pub async fn rate_limit_mw(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     req: Request<Body>,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, TooManyRequests> {
     let ip = client_ip(&state.rate_limiter, &req, addr);
     if state.rate_limiter.check(ip) {
         Ok(next.run(req).await)
     } else {
         warn!(ip = %ip, "rate limit exceeded");
-        Err(too_many_requests())
+        Err(TooManyRequests)
     }
-}
-
-/// 429 с корректным Retry-After.
-#[inline]
-fn too_many_requests() -> Response {
-    let mut resp = axum::http::StatusCode::TOO_MANY_REQUESTS.into_response();
-    resp.headers_mut()
-        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
-    resp
 }
 
 /// Определяет IP клиента.
@@ -240,7 +254,7 @@ mod tests {
 
     #[test]
     fn allows_up_to_capacity() {
-        let rl = limiter(5, 0.0); // без refill
+        let rl = limiter(5, 0.0);
         let client = ip("1.2.3.4");
         for i in 0..5 {
             assert!(rl.check(client), "request {} should pass", i + 1);
@@ -256,7 +270,6 @@ mod tests {
         assert!(rl.check(a));
         assert!(rl.check(a));
         assert!(!rl.check(a));
-        // b не пострадал
         assert!(rl.check(b));
         assert!(rl.check(b));
         assert!(!rl.check(b));
@@ -264,19 +277,18 @@ mod tests {
 
     #[test]
     fn refill_adds_tokens() {
-        let rl = limiter(2, 1000.0); // refill 1000/sec
+        let rl = limiter(2, 1000.0);
         let client = ip("3.3.3.3");
         assert!(rl.check(client));
         assert!(rl.check(client));
-        // за 1ms refill даёт 1 токен
         std::thread::sleep(std::time::Duration::from_millis(2));
         assert!(rl.check(client));
     }
 
     #[test]
-    fn too_many_requests_has_status_and_retry_after() {
-        let resp = too_many_requests();
-        assert_eq!(resp.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+    fn too_many_requests_into_response_has_status_and_retry_after() {
+        let resp = TooManyRequests.into_response();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(
             resp.headers().get(header::RETRY_AFTER).unwrap(),
             HeaderValue::from_static("1"),
