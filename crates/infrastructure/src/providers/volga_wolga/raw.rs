@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RawData {
     pub ships: Vec<RawShip>,
     pub decks: Vec<RawDeck>,
@@ -12,19 +12,19 @@ pub struct RawData {
     pub free: Vec<RawFree>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawShip {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawDeck {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawClass {
     pub id: String,
     pub name: String,
@@ -34,7 +34,7 @@ pub struct RawClass {
     pub no_full: Option<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawCabin {
     pub id: String,
     pub ship: String,
@@ -43,7 +43,7 @@ pub struct RawCabin {
     pub deck: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawCruise {
     pub id: String,
     pub ship_id: String,
@@ -56,7 +56,7 @@ pub struct RawCruise {
     pub dop_price: Option<Decimal>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawPrice {
     pub cruise_id: String,
     pub class_id: String,
@@ -64,7 +64,7 @@ pub struct RawPrice {
     pub nofull: Option<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawSpo {
     pub cruise_id: String,
     pub class_id: String,
@@ -73,7 +73,7 @@ pub struct RawSpo {
     pub nofull: Option<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawFree {
     pub cruise_id: String,
     pub cabin_id: String,

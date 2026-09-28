@@ -34,12 +34,15 @@ uuid.workspace = true
 # ============================================================
 #
 # `harness = false` — criterion предоставляет собственный main,
-# стандартный libtest-harness не нужен. Без этого cargo не соберёт
-# bench-бинарь.
+# стандартный libtest-harness не нужен.
 #
-# Каждый bench — отдельный [[bench]]: свой процесс, свой criterion-main.
-# Это позволяет запускать точечно (`cargo bench --bench parser`)
-# и не платить за компиляцию остальных.
+# `benches/common/mod.rs` не компилируется как отдельный bench
+# (Cargo собирает только `benches/*.rs`). Подключается через
+# `mod common;` из bench-файлов.
 [[bench]]
 name = "parser"
+harness = false
+
+[[bench]]
+name = "transform"
 harness = false
