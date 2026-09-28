@@ -1,0 +1,29 @@
+# ============================================================
+# EditorConfig — единый стиль для всех редакторов
+# ============================================================
+# Плагины: VS Code (EditorConfig), JetBrains (встроено),
+# Vim, Sublime, Emacs.
+#
+# Значения — под rustfmt defaults: 4 пробела, LF, UTF-8.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
