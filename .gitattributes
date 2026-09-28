@@ -1,0 +1,37 @@
+# ============================================================
+# Git line endings — стандарт для кроссплатформенных проектов
+# ============================================================
+#
+# Все текстовые файлы в репо хранятся с LF. Git конвертирует
+# CRLF при checkout на Windows автоматически, если установлен
+# `core.autocrlf=input` (см. ниже).
+#
+# Зачем: без этого Git «шумит» warning'ами при каждом add на
+# Windows, и diff'ы показывают перезапись всех строк, если
+# кто-то сохранит файл с CRLF.
+
+# Нормализация: при коммите CRLF → LF
+* text=auto eol=lf
+
+# Явно текстовые
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.sql       text eol=lf
+*.txt       text eol=lf
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+
+# Windows-скрипты — CRLF
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Бинарные — не трогать
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.pdf       binary
