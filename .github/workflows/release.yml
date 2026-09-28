@@ -25,6 +25,13 @@
 #   4. Watch this workflow. When green, a Release appears at
 #      https://github.com/marinkin2014-debug/kamtur/releases
 #
+# PRE-RELEASE TAGS
+#
+#   v0.1.0-rc1, v0.2.0-beta.3, etc. still ship the base version
+#   from Cargo.toml (0.1.0, 0.2.0). The `-rc1` / `-beta.3` suffix
+#   belongs to the release artifact, not to the crate's package
+#   version. `verify-version` compares BASE versions accordingly.
+#
 # VERIFYING DOWNLOADED BINARIES
 #
 #   sha256sum -c SHA256SUMS
@@ -56,6 +63,10 @@ jobs:
   # Prevents the classic mistake: tagging v0.2.0 while Cargo.toml
   # still says 0.1.0. Failing here is much cheaper than shipping
   # a mislabelled binary.
+  #
+  # Comparison uses the BASE version (major.minor.patch), with any
+  # semver pre-release (`-rc1`) or build (`+build.5`) suffix stripped.
+  # See the "PRE-RELEASE TAGS" note in the header for rationale.
   verify-version:
     name: Verify tag matches Cargo.toml version
     runs-on: ubuntu-latest
@@ -84,14 +95,25 @@ jobs:
           WS_VERSION: ${{ steps.ws.outputs.version }}
         run: |
           set -euo pipefail
-          # Strip the leading `v` from the tag (v0.2.0 → 0.2.0).
+          # Strip leading `v` and any pre-release/build metadata.
+          #
+          # v0.1.0        → 0.1.0
+          # v0.1.0-rc1    → 0.1.0
+          # v0.1.0+build5 → 0.1.0
+          #
+          # A pre-release tag (v0.1.0-rc1) still ships version 0.1.0
+          # from Cargo.toml. The `-rc1` suffix belongs to the release
+          # artifact, not to the crate's package version.
           TAG_VERSION="${TAG#v}"
-          if [ "$TAG_VERSION" != "$WS_VERSION" ]; then
-            echo "::error::Tag $TAG does not match workspace version $WS_VERSION"
+          BASE_TAG="${TAG_VERSION%%-*}"   # cut at first '-'
+          BASE_TAG="${BASE_TAG%%+*}"      # cut at first '+'
+
+          if [ "$BASE_TAG" != "$WS_VERSION" ]; then
+            echo "::error::Tag $TAG (base version $BASE_TAG) does not match workspace version $WS_VERSION"
             echo "::error::Bump version in Cargo.toml or retag."
             exit 1
           fi
-          echo "Tag $TAG matches workspace version $WS_VERSION"
+          echo "Tag $TAG matches workspace version $WS_VERSION (base $BASE_TAG)"
 
   # ============================================================
   # 2. Build static Linux binaries
