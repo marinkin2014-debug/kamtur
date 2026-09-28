@@ -68,7 +68,7 @@ metrics-process = "2"
 
 # Web
 axum = "0.7"
-axum-prometheus = "0.6"           # 0.7 требует axum 0.8 — несовместимо
+axum-prometheus = "0.6"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "request-id", "sensitive-headers"] }
 http-body = "1"
@@ -84,8 +84,24 @@ uuid = { version = "1", features = ["v4"] }
 # Test
 pretty_assertions = "1"
 
+# Bench
+#
+# criterion 0.5 — стабильная серия. 0.6+ привнёс breaking changes в API
+# (async-поддержка через feature flag), не требуется для синхронных
+# бенчмарков. Апгрейд запланирован на 3D вместе с общим обновлением
+# зависимостей.
+criterion = "0.5"
+
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Profile для criterion. Наследует release, но БЕЗ strip: `cargo bench`
+# компилирует весь workspace, и strip замедляет инкрементальные сборки
+# (приходится перезаписывать большие .so/.rlib). Профиль release
+# продолжает strip'ать релизные бинари, profile.bench — нет.
+[profile.bench]
+inherits = "release"
+strip = "none"

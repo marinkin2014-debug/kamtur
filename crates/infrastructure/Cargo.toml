@@ -23,7 +23,23 @@ tracing.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 dotenvy.workspace = true
 pretty_assertions.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 uuid.workspace = true
+
+# ============================================================
+# Benchmarks
+# ============================================================
+#
+# `harness = false` — criterion предоставляет собственный main,
+# стандартный libtest-harness не нужен. Без этого cargo не соберёт
+# bench-бинарь.
+#
+# Каждый bench — отдельный [[bench]]: свой процесс, свой criterion-main.
+# Это позволяет запускать точечно (`cargo bench --bench parser`)
+# и не платить за компиляцию остальных.
+[[bench]]
+name = "parser"
+harness = false
