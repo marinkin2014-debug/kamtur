@@ -35,6 +35,32 @@ pub struct Config {
     ///
     /// 30 сек — компромисс: `5s statement_timeout + 25s` на оверхед.
     pub request_timeout_secs: u64,
+
+    /// Включён ли rate limit middleware.
+    ///
+    /// - `true` (default) — middleware устанавливается, лимиты берутся из
+    ///   `rate_limit_capacity` / `rate_limit_refill_per_sec`.
+    /// - `false` — middleware не устанавливается. Никаких 429, никакой
+    ///   траты токенов. Используется для load-тестов (k6, B.6): мы хотим
+    ///   измерить latency самого API и БД, а не алгоритм token bucket.
+    ///
+    /// В проде **обязательно** `true`: без лимита один клиент может
+    /// уложить SQL пул и задушить остальных. Настройка для bench/CI.
+    pub rate_limit_enabled: bool,
+
+    /// Ёмкость token bucket на один IP.
+    ///
+    /// 100 (default) = короткий burst 100 запросов, затем refill.
+    /// Для load-теста с одного IP (127.0.0.1) — либо `rate_limit_enabled =
+    /// false`, либо capacity >= ожидаемого burst'а.
+    pub rate_limit_capacity: u32,
+
+    /// Скорость refill token bucket (токенов/сек на IP).
+    ///
+    /// 20.0 (default) — устойчиво 20 rps, короткие bursts до capacity.
+    /// 100 rps нагрузка с одного IP требует либо `rate_limit_enabled =
+    /// false`, либо refill >= 100.
+    pub rate_limit_refill_per_sec: f64,
 }
 
 impl Config {
@@ -58,6 +84,23 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(30),
+
+            // Парсинг bool: `"false"`, `"0"`, `"no"` → false, всё
+            // остальное (включая `"true"`, `"1"`, `"yes"`, отсутствие
+            // переменной) → true. Отсутствие = дефолт = защита включена.
+            rate_limit_enabled: std::env::var("RATE_LIMIT_ENABLED")
+                .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "false" | "0" | "no"))
+                .unwrap_or(true),
+
+            rate_limit_capacity: std::env::var("RATE_LIMIT_CAPACITY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(100),
+
+            rate_limit_refill_per_sec: std::env::var("RATE_LIMIT_REFILL_PER_SEC")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(20.0),
         })
     }
 

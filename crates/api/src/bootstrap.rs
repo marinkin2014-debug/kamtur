@@ -71,7 +71,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         info!(spec = %config.trusted_proxies, "trusted proxies configured");
     }
 
-    let rate_limiter = Arc::new(RateLimiter::new(100, 20.0, trusted_proxies));
+    let rate_limiter = Arc::new(RateLimiter::new(
+        config.rate_limit_capacity,
+        config.rate_limit_refill_per_sec,
+        trusted_proxies,
+    ));
     let rate_limiter_sweeper = rate_limiter.clone().spawn_sweeper();
 
     let state = AppState::new(
@@ -121,6 +125,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     // того, rate-limit должен срабатывать до того, как запрос займёт
     // слот в timeout'е — иначе flood битых запросов будет ждать таймаут
     // вместо мгновенного 429.
+    // Rate limit условный: `RATE_LIMIT_ENABLED=false` отключает middleware
+    // целиком (для load-тестов). Порядок слоёв вокруг остаётся прежним:
+    // rate_limit — снаружи timeout, внутри cache (см. docstring выше).
     let app = Router::new()
         .merge(routes::health_router())
         .merge(metrics_route)
@@ -129,8 +136,16 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 .layer(middleware::from_fn_with_state(state.clone(), require_token)),
         )
         .layer(middleware::from_fn_with_state(timeout_state, timeout_mw))
-        .layer(prometheus_layer)
-        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_mw))
+        .layer(prometheus_layer);
+
+    let app = if config.rate_limit_enabled {
+        app.layer(middleware::from_fn_with_state(state.clone(), rate_limit_mw))
+    } else {
+        info!("rate limit middleware disabled (RATE_LIMIT_ENABLED=false)");
+        app
+    };
+
+    let app = app
         .layer(middleware::from_fn(cache_headers))
         // --- Observability (в порядке добавления — от внутреннего к внешнему) ---
         .layer(SetSensitiveRequestHeadersLayer::new(once(
