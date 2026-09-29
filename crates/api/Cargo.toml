@@ -38,7 +38,22 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
+hex.workspace = true
 http-body-util.workspace = true
 pretty_assertions.workspace = true
 rust_decimal.workspace = true
 tower = { workspace = true, features = ["util"] }
+
+# ============================================================
+# Benchmarks
+# ============================================================
+#
+# `harness = false` — criterion предоставляет собственный main.
+#
+# `hex` нужен только бенчмарку `etag.rs` (для naive-вариантов сравнения),
+# в production-коде api не используется — поэтому в dev-dependencies.
+# `sha2` уже в `[dependencies]`, benches его видят автоматически.
+[[bench]]
+name = "etag"
+harness = false

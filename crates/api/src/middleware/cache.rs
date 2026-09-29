@@ -144,8 +144,16 @@ pub async fn cache_headers(req: Request<Body>, next: Next) -> Response {
 /// аллокация, ноль промежуточных строк. `write!` в `String` не может
 /// вернуть ошибку по контракту `fmt::Write` для `String`, `expect`
 /// документирует инвариант.
+/// # Visibility
+///
+/// `#[doc(hidden)] pub` — экспортируется только для бенчмарков
+/// (`api/benches/etag.rs`), которые компилируются как отдельные крейты
+/// и видят только публичный API. В production вызывается из
+/// `cache_headers` middleware. Паттерн идентичен `RawData` в
+/// `infrastructure::providers::volga_wolga`.
+#[doc(hidden)]
 #[inline]
-fn etag_from_sha256(hash: &[u8; 32]) -> String {
+pub fn etag_from_sha256(hash: &[u8; 32]) -> String {
     let mut etag = String::with_capacity(18);
     etag.push('"');
     for b in &hash[..8] {

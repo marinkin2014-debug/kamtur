@@ -16,4 +16,19 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 pretty_assertions.workspace = true
+
+# ============================================================
+# Benchmarks
+# ============================================================
+#
+# `harness = false` — criterion предоставляет собственный main,
+# стандартный libtest-harness не нужен.
+#
+# `sha2` и `hex` НЕ дублируем в dev-dependencies: benches автоматически
+# видят `[dependencies]` пакета (проверено: api/tests/*.rs использует
+# `async_trait`, `axum`, `chrono` из `[dependencies]` api).
+[[bench]]
+name = "fingerprint"
+harness = false
