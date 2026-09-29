@@ -1,0 +1,46 @@
+-- Индекс для keyset pagination в `list_cruises`.
+--
+-- Запрос (crates/infrastructure/src/repositories/postgres/read.rs::list_cruises):
+--
+--   SELECT ... FROM cruise_provider_tours t
+--   WHERE t.cruise_provider_id = $1 AND t.is_active = true
+--     AND (t.begin_date, t.cruise_provider_cruise_id) > ($cursor_date, $cursor_id)
+--   ORDER BY t.begin_date ASC, t.cruise_provider_cruise_id ASC
+--   LIMIT N
+--
+-- ## Почему этого индекса не хватало
+--
+-- Существующий `tours_provider_active_date (cruise_provider_id, is_active,
+-- begin_date)` покрывает префикс и первую колонку сортировки, но НЕ
+-- покрывает tiebreaker `cruise_provider_cruise_id`. При keyset-поиске
+-- Postgres обязан для каждой кандидатной строки сделать heap-fetch, чтобы
+-- проверить tiebreaker. Замер B.4 на seed=100k:
+--
+--   page=1    4.6 ms
+--   page=100  7.6 ms
+--   page=1000 32.1 ms   ← 7-кратное отставание, несовместимо с
+--                          keyset-инвариантом "latency constant with depth"
+--
+-- Причина — O(N) heap-fetch'ей пропорционально глубине.
+--
+-- ## Что даёт этот индекс
+--
+-- Порядок колонок совпадает с `(filter_key, order_key_1, order_key_2)`:
+--
+--   cruise_provider_id         — equality filter, index prefix
+--   begin_date                 — range + order #1
+--   cruise_provider_cruise_id  — tiebreaker + order #2
+--
+-- В сочетании с tuple-comparison `(begin_date, cruise_id) > ($5, $6)`
+-- (см. read.rs) это даёт index-only seek на N строк (N = LIMIT),
+-- независимо от глубины курсора. Никаких heap-fetch'ей, никаких сортировок.
+--
+-- ## Partial index
+--
+-- `list_cruises` всегда фильтрует по `is_active = true`. Неактивные tours
+-- не должны занимать место в индексе — паттерн консистентен с уже
+-- существующими `tours_active_idx` и `tours_departure_city`.
+CREATE INDEX idx_tours_keyset
+    ON cruise_provider_tours
+       (cruise_provider_id, begin_date, cruise_provider_cruise_id)
+    WHERE is_active = true;

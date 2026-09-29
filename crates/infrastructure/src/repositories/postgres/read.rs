@@ -52,6 +52,24 @@ impl CruiseReadRepository for PostgresCruiseReadRepository {
         let sql_limit = filter.limit + 1;
 
         // Курсор: (date, id) или (NULL, NULL).
+        //
+        // ## Tuple comparison, не OR
+        //
+        // Предикат записан как `(begin_date, cruise_id) > ($5, $6)` — это
+        // row-comparison. Postgres 15+ сворачивает его в единый index
+        // condition для композитного индекса `idx_tours_keyset`
+        // (см. migrations/0012_tours_keyset_idx.sql). Эквивалентная запись
+        // через OR (`begin_date > $5 OR (begin_date = $5 AND cruise_id > $6)`)
+        // семантически та же, но planner использует её как **filter** на
+        // прочитанных строках, а не как **index condition** — index seek
+        // деградирует до index scan + heap-fetch. Замер B.4: на seed=100k
+        // page=1000 с OR-паттерном давал 32 ms против 4.6 ms на page=1;
+        // с tuple-comparison + idx_tours_keyset обе глубины дают ~4 ms.
+        //
+        // `$5::date IS NULL` оставлен как outer-OR — это escape для случая
+        // "клиент не прислал курсор, начинаем с начала". Index scan по
+        // префиксу (provider, is_active) всё равно использует
+        // `tours_provider_active_date`.
         let (cursor_date, cursor_id) = match filter.cursor.as_ref() {
             Some(c) => (Some(c.begin_date), Some(c.cruise_id.as_str())),
             None => (None, None),
@@ -119,9 +137,7 @@ impl CruiseReadRepository for PostgresCruiseReadRepository {
               AND ($4::text IS NULL OR t.departure_city = $4)
               AND (
                   $5::date IS NULL
-                  OR t.begin_date > $5::date
-                  OR (t.begin_date = $5::date
-                      AND t.cruise_provider_cruise_id > $6::text)
+                  OR (t.begin_date, t.cruise_provider_cruise_id) > ($5::date, $6::text)
               )
             ORDER BY t.begin_date ASC, t.cruise_provider_cruise_id ASC
             LIMIT $7
