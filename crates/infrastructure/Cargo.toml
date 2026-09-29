@@ -52,3 +52,10 @@ harness = false
 [[bench]]
 name = "list_cruises"
 harness = false
+
+# B.5: SCD2 writer throughput on prices.
+# Requires TEST_DATABASE_URL or DATABASE_URL — skips gracefully if unset.
+# Rolls back each iteration so the SCD2 state stays at baseline.
+[[bench]]
+name = "scd2"
+harness = false

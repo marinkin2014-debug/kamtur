@@ -7,14 +7,32 @@ use domain::errors::RepositoryError;
 
 use super::error::tx_err;
 
+/// Результат применения SCD2-диффа: сколько версий создано, обновлено, закрыто.
+///
+/// # Visibility
+///
+/// `#[doc(hidden)] pub` — экспортируется только для бенчмарков
+/// (`infrastructure/benches/scd2.rs`), которые компилируются как отдельные
+/// крейты и видят только публичный API. В production используется через
+/// `PostgresCruiseRepository::apply_sync`. Паттерн идентичен `RawData`
+/// (в `providers/volga_wolga`) и `etag_from_sha256` (в `api::middleware::cache`).
+#[doc(hidden)]
 #[derive(Debug, Default)]
-pub(super) struct ScdOutcome {
+pub struct ScdOutcome {
     pub created: usize,
     pub updated: usize,
     pub closed: usize,
 }
 
-pub(super) async fn apply_prices_scd2(
+/// Применяет набор `CanonicalPrice` к `cruise_provider_prices` через SCD2-логику.
+///
+/// # Visibility
+///
+/// `#[doc(hidden)] pub` — только для бенчмарков `benches/scd2.rs`.
+/// В production вызывается исключительно из `apply_sync` внутри этого же
+/// крейта.
+#[doc(hidden)]
+pub async fn apply_prices_scd2(
     tx: &mut Transaction<'_, Postgres>,
     provider_id: &ProviderId,
     prices: &[CanonicalPrice],

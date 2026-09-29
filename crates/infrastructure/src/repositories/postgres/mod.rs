@@ -8,7 +8,7 @@ mod errors;
 mod health_checks;
 mod maintenance;
 mod objects;
-mod prices;
+pub mod prices;
 mod read;
 mod retry;
 mod rules;
